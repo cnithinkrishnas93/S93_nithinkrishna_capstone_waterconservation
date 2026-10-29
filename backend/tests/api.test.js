@@ -142,6 +142,59 @@ test('detail GET endpoints return records and handle invalid or missing IDs', as
   }
 })
 
+test('program API persists new conservation programs and filters unknown fields', async (t) => {
+  const app = createApp({
+    HouseholdModel: createMemoryModel(),
+    WaterUsageModel: createMemoryModel(),
+    ConservationProgramModel: createMemoryModel(),
+  })
+  const server = app.listen(0)
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))))
+  const baseUrl = `http://127.0.0.1:${server.address().port}`
+
+  const response = await fetch(`${baseUrl}/api/programs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: 'Water Wise Neighborhoods',
+      description: 'Help households reduce water consumption.',
+      startDate: '2026-11-01',
+      endDate: '2026-12-01',
+      targetReductionPercentage: 15,
+      unexpectedField: 'must not be persisted',
+    }),
+  })
+
+  const createdProgram = await response.json()
+  assert.equal(response.status, 201)
+  assert.equal(createdProgram.name, 'Water Wise Neighborhoods')
+  assert.equal(createdProgram.targetReductionPercentage, 15)
+  assert.equal('unexpectedField' in createdProgram, false)
+})
+
+test('POST endpoints reject non-object request bodies', async (t) => {
+  const app = createApp({
+    HouseholdModel: createMemoryModel(),
+    WaterUsageModel: createMemoryModel(),
+    ConservationProgramModel: createMemoryModel(),
+  })
+  const server = app.listen(0)
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))))
+  const baseUrl = `http://127.0.0.1:${server.address().port}`
+
+  for (const endpoint of ['/api/households', '/api/usage', '/api/programs']) {
+    const response = await fetch(`${baseUrl}${endpoint}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify([]),
+    })
+    assert.equal(response.status, 400)
+    assert.deepEqual(await response.json(), { error: 'Request body must be a JSON object.' })
+  }
+})
+
 test('usage API persists readings for existing households and rejects missing households', async (t) => {
   const HouseholdModel = createMemoryModel([{ _id: householdId }])
   const WaterUsageModel = createMemoryModel()
