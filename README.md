@@ -32,3 +32,48 @@ A user-friendly application concept that helps organizations understand water us
 - Water usage alerts.
 - Historical usage reports.
 Project Status: Initial planning and GitHub setup completed.
+
+## Database and API
+
+The Mongoose models in `backend/models/` define households, water usage
+readings, and conservation programs. The Express API reads and writes these
+records in MongoDB, and the dashboard loads household and usage data from the
+API. It also provides forms to create households and save water readings.
+
+### Run the application
+
+1. Install and start MongoDB locally, or create a MongoDB Atlas database.
+2. In `backend/`, copy `.env.example` to `.env` and set `MONGODB_URI` to your
+   connection string. Keep `.env` private; it is ignored by Git.
+3. Install and start the backend:
+
+   ```bash
+   cd backend
+   npm install
+   npm start
+   ```
+
+4. In another terminal, install and start the frontend:
+
+   ```bash
+   cd client
+   npm install
+   npm run dev
+   ```
+
+Vite proxies `/api` requests to the backend on port `5000`. The dashboard
+shows records saved in MongoDB rather than sample data.
+
+### API endpoints
+
+| Method | Endpoint | Database operation |
+| --- | --- | --- |
+| `GET` | `/api/households` | Read the latest 100 households |
+| `POST` | `/api/households` | Validate and save a household |
+| `GET` | `/api/usage` | Read the latest 100 readings with household details |
+| `POST` | `/api/usage` | Validate and save a reading for an existing household |
+| `GET` | `/api/programs` | Read the latest 100 conservation programs |
+| `POST` | `/api/programs` | Validate and save a conservation program |
+| `GET` | `/api/health` | Check API and MongoDB availability |
+
+Run the backend tests with `cd backend; npm test`.
