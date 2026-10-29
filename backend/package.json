@@ -1,0 +1,12 @@
+{
+  "name": "bluedrop-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "mongoose": "^8.19.1"
+  }
+}
