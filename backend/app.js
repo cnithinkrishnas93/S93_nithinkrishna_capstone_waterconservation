@@ -45,6 +45,22 @@ export function createApp({
     }),
   )
 
+  app.get(
+    '/api/households/:id',
+    asyncHandler(async (req, res) => {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ error: 'A valid household ID is required.' })
+      }
+
+      const household = await HouseholdModel.findById(req.params.id).lean()
+      if (!household) {
+        return res.status(404).json({ error: 'Household not found.' })
+      }
+
+      res.json(household)
+    }),
+  )
+
   app.post(
     '/api/households',
     ensureBodyObject,
@@ -73,6 +89,24 @@ export function createApp({
         .populate('household', 'name householdCode')
         .lean()
       res.json(readings)
+    }),
+  )
+
+  app.get(
+    '/api/usage/:id',
+    asyncHandler(async (req, res) => {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ error: 'A valid usage ID is required.' })
+      }
+
+      const reading = await WaterUsageModel.findById(req.params.id)
+        .populate('household', 'name householdCode')
+        .lean()
+      if (!reading) {
+        return res.status(404).json({ error: 'Usage record not found.' })
+      }
+
+      res.json(reading)
     }),
   )
 
@@ -107,6 +141,24 @@ export function createApp({
         .populate('participatingHouseholds', 'name householdCode')
         .lean()
       res.json(programs)
+    }),
+  )
+
+  app.get(
+    '/api/programs/:id',
+    asyncHandler(async (req, res) => {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ error: 'A valid program ID is required.' })
+      }
+
+      const program = await ConservationProgramModel.findById(req.params.id)
+        .populate('participatingHouseholds', 'name householdCode')
+        .lean()
+      if (!program) {
+        return res.status(404).json({ error: 'Program not found.' })
+      }
+
+      res.json(program)
     }),
   )
 

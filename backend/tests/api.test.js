@@ -39,6 +39,18 @@ function createMemoryModel(initialRecords = []) {
       return query
     }
 
+    static findById(id) {
+      const result = records.find((record) => record._id === id) || null
+      return {
+        populate() {
+          return this
+        },
+        lean() {
+          return Promise.resolve(result)
+        },
+      }
+    }
+
     static async exists({ _id }) {
       return records.some((record) => record._id === _id) ? { _id } : null
     }
@@ -81,6 +93,53 @@ test('household API reads records and persists new household records', async (t)
   assert.equal(createResponse.status, 201)
   assert.equal(createdHousehold.householdCode, 'HH-002')
   assert.equal('unexpectedField' in createdHousehold, false)
+})
+
+test('detail GET endpoints return records and handle invalid or missing IDs', async (t) => {
+  const recordId = '507f1f77bcf86cd799439011'
+  const endpoints = [
+    {
+      path: '/api/households',
+      record: { _id: recordId, name: 'Greenwood Apartments' },
+      error: 'Household not found.',
+      invalidError: 'A valid household ID is required.',
+    },
+    {
+      path: '/api/usage',
+      record: { _id: recordId, consumptionLiters: 860 },
+      error: 'Usage record not found.',
+      invalidError: 'A valid usage ID is required.',
+    },
+    {
+      path: '/api/programs',
+      record: { _id: recordId, name: 'Water Wise Neighborhoods' },
+      error: 'Program not found.',
+      invalidError: 'A valid program ID is required.',
+    },
+  ]
+  const app = createApp({
+    HouseholdModel: createMemoryModel([endpoints[0].record]),
+    WaterUsageModel: createMemoryModel([endpoints[1].record]),
+    ConservationProgramModel: createMemoryModel([endpoints[2].record]),
+  })
+  const server = app.listen(0)
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))))
+  const baseUrl = `http://127.0.0.1:${server.address().port}`
+
+  for (const endpoint of endpoints) {
+    const response = await fetch(`${baseUrl}${endpoint.path}/${recordId}`)
+    assert.equal(response.status, 200)
+    assert.equal((await response.json())._id, recordId)
+
+    const invalidResponse = await fetch(`${baseUrl}${endpoint.path}/not-an-object-id`)
+    assert.equal(invalidResponse.status, 400)
+    assert.deepEqual(await invalidResponse.json(), { error: endpoint.invalidError })
+
+    const missingResponse = await fetch(`${baseUrl}${endpoint.path}/507f1f77bcf86cd799439012`)
+    assert.equal(missingResponse.status, 404)
+    assert.deepEqual(await missingResponse.json(), { error: endpoint.error })
+  }
 })
 
 test('usage API persists readings for existing households and rejects missing households', async (t) => {

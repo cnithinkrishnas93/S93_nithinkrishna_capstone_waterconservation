@@ -69,10 +69,13 @@ shows records saved in MongoDB rather than sample data.
 | Method | Endpoint | Database operation |
 | --- | --- | --- |
 | `GET` | `/api/households` | Read the latest 100 households |
+| `GET` | `/api/households/:id` | Read a household by ID |
 | `POST` | `/api/households` | Validate and save a household |
 | `GET` | `/api/usage` | Read the latest 100 readings with household details |
+| `GET` | `/api/usage/:id` | Read a usage record by ID with household details |
 | `POST` | `/api/usage` | Validate and save a reading for an existing household |
 | `GET` | `/api/programs` | Read the latest 100 conservation programs |
+| `GET` | `/api/programs/:id` | Read a conservation program by ID with participating households |
 | `POST` | `/api/programs` | Validate and save a conservation program |
 | `GET` | `/api/health` | Check API and MongoDB availability |
 
