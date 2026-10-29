@@ -31,4 +31,28 @@ A user-friendly application concept that helps organizations understand water us
 - Real-time water meter integration.
 - Water usage alerts.
 - Historical usage reports.
+
 Project Status: Initial planning and GitHub setup completed.
+
+## Database schemas
+
+The Mongoose models are in `backend/models/`:
+
+- `Household` stores a uniquely coded household, its location, resident count,
+  daily conservation goal, and active status.
+- `WaterUsage` stores a household's measured consumption, recording time,
+  optional meter reading, and reading source. Each usage record references a
+  household.
+- `ConservationProgram` stores a program's schedule, reduction target, status,
+  and participating households.
+
+Schemas use MongoDB ObjectId references, validation, timestamps, and indexes
+for unique household codes and common usage/program lookups.
+
+To install the backend dependency and run the schema tests:
+
+```bash
+cd backend
+npm install
+npm test
+```
