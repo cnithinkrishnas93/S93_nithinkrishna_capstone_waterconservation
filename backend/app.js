@@ -1,0 +1,157 @@
+import express from 'express'
+import mongoose from 'mongoose'
+import ConservationProgram from './models/ConservationProgram.js'
+import Household from './models/Household.js'
+import WaterUsage from './models/WaterUsage.js'
+
+const asyncHandler = (handler) => (req, res, next) => {
+  Promise.resolve(handler(req, res, next)).catch(next)
+}
+
+const pick = (body, fields) =>
+  Object.fromEntries(fields.filter((field) => body[field] !== undefined).map((field) => [field, body[field]]))
+
+const ensureBodyObject = (req, res, next) => {
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return res.status(400).json({ error: 'Request body must be a JSON object.' })
+  }
+
+  next()
+}
+
+export function createApp({
+  HouseholdModel = Household,
+  WaterUsageModel = WaterUsage,
+  ConservationProgramModel = ConservationProgram,
+} = {}) {
+  const app = express()
+
+  app.disable('x-powered-by')
+  app.use(express.json({ limit: '32kb' }))
+
+  app.get(
+    '/api/health',
+    (_req, res) => {
+      const connected = mongoose.connection.readyState === 1
+      res.status(connected ? 200 : 503).json({ status: connected ? 'ok' : 'database unavailable' })
+    },
+  )
+
+  app.get(
+    '/api/households',
+    asyncHandler(async (_req, res) => {
+      const households = await HouseholdModel.find().sort({ createdAt: -1 }).limit(100).lean()
+      res.json(households)
+    }),
+  )
+
+  app.post(
+    '/api/households',
+    ensureBodyObject,
+    asyncHandler(async (req, res) => {
+      const household = new HouseholdModel(
+        pick(req.body, [
+          'name',
+          'householdCode',
+          'location',
+          'residents',
+          'conservationGoalLitersPerPersonPerDay',
+          'status',
+        ]),
+      )
+      await household.save()
+      res.status(201).json(household)
+    }),
+  )
+
+  app.get(
+    '/api/usage',
+    asyncHandler(async (_req, res) => {
+      const readings = await WaterUsageModel.find()
+        .sort({ recordedAt: -1 })
+        .limit(100)
+        .populate('household', 'name householdCode')
+        .lean()
+      res.json(readings)
+    }),
+  )
+
+  app.post(
+    '/api/usage',
+    ensureBodyObject,
+    asyncHandler(async (req, res) => {
+      const { household: householdId } = req.body
+      if (!mongoose.Types.ObjectId.isValid(householdId)) {
+        return res.status(400).json({ error: 'A valid household ID is required.' })
+      }
+
+      const household = await HouseholdModel.exists({ _id: householdId })
+      if (!household) {
+        return res.status(404).json({ error: 'Household not found.' })
+      }
+
+      const reading = new WaterUsageModel(
+        pick(req.body, ['household', 'recordedAt', 'consumptionLiters', 'meterReadingLiters', 'source', 'notes']),
+      )
+      await reading.save()
+      res.status(201).json(reading)
+    }),
+  )
+
+  app.get(
+    '/api/programs',
+    asyncHandler(async (_req, res) => {
+      const programs = await ConservationProgramModel.find()
+        .sort({ startDate: -1 })
+        .limit(100)
+        .populate('participatingHouseholds', 'name householdCode')
+        .lean()
+      res.json(programs)
+    }),
+  )
+
+  app.post(
+    '/api/programs',
+    ensureBodyObject,
+    asyncHandler(async (req, res) => {
+      const program = new ConservationProgramModel(
+        pick(req.body, [
+          'name',
+          'description',
+          'startDate',
+          'endDate',
+          'targetReductionPercentage',
+          'status',
+          'participatingHouseholds',
+        ]),
+      )
+      await program.save()
+      res.status(201).json(program)
+    }),
+  )
+
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'API route not found.' })
+  })
+
+  app.use((error, _req, res, _next) => {
+    if (error instanceof mongoose.Error.ValidationError || error instanceof mongoose.Error.CastError) {
+      return res.status(400).json({ error: error.message })
+    }
+
+    if (error.code === 11000) {
+      return res.status(409).json({ error: 'A record with that unique value already exists.' })
+    }
+
+    if (error.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'Request body contains invalid JSON.' })
+    }
+
+    console.error('Unhandled API error:', error)
+    res.status(500).json({ error: 'An unexpected server error occurred.' })
+  })
+
+  return app
+}
+
+export default createApp()
