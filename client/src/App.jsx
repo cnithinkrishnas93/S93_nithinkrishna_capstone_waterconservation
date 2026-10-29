@@ -75,11 +75,43 @@ function DropIcon({ className = '' }) {
   )
 }
 
+function HouseholdFields({ household }) {
+  return (
+    <>
+      <label>
+        Household name
+        <input className="text-field" name="name" defaultValue={household?.name || ''} required maxLength="120" />
+      </label>
+      <label>
+        Household code
+        <input className="text-field" name="householdCode" defaultValue={household?.householdCode || ''} required maxLength="120" />
+      </label>
+      <label>
+        District
+        <input className="text-field" name="district" defaultValue={household?.location?.district || ''} required maxLength="120" />
+      </label>
+      <label>
+        City
+        <input className="text-field" name="city" defaultValue={household?.location?.city || ''} required maxLength="120" />
+      </label>
+      <label>
+        Residents
+        <input className="text-field" name="residents" type="number" defaultValue={household?.residents ?? ''} min="1" step="1" required />
+      </label>
+      <label>
+        Daily goal (L/person)
+        <input className="text-field" name="dailyGoal" type="number" defaultValue={household?.conservationGoalLitersPerPersonPerDay ?? ''} min="0" step="0.1" required />
+      </label>
+    </>
+  )
+}
+
 function App() {
   const [period, setPeriod] = useState('week')
   const [activeSection, setActiveSection] = useState('overview')
   const [households, setHouseholds] = useState([])
   const [readings, setReadings] = useState([])
+  const [editingHousehold, setEditingHousehold] = useState(null)
   const [selectedHousehold, setSelectedHousehold] = useState('')
   const [loadedAt, setLoadedAt] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -171,6 +203,56 @@ function App() {
       await loadDashboard()
     } catch (saveError) {
       setError(saveError.message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function handleUpdateHousehold(event) {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    setError('')
+    setNotice('')
+    setIsSaving(true)
+
+    try {
+      await apiRequest(`/households/${editingHousehold._id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: formData.get('name'),
+          householdCode: formData.get('householdCode'),
+          location: {
+            district: formData.get('district'),
+            city: formData.get('city'),
+          },
+          residents: Number(formData.get('residents')),
+          conservationGoalLitersPerPersonPerDay: Number(formData.get('dailyGoal')),
+        }),
+      })
+      setEditingHousehold(null)
+      setNotice('Household updated successfully.')
+      await loadDashboard()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function handleDeleteHousehold(household) {
+    if (!window.confirm(`Delete ${household.name}? This cannot be undone.`)) return
+
+    setError('')
+    setNotice('')
+    setIsSaving(true)
+
+    try {
+      await apiRequest(`/households/${household._id}`, { method: 'DELETE' })
+      if (editingHousehold?._id === household._id) setEditingHousehold(null)
+      setNotice('Household deleted successfully.')
+      await loadDashboard()
+    } catch (deleteError) {
+      setError(deleteError.message)
     } finally {
       setIsSaving(false)
     }
@@ -338,10 +420,10 @@ function App() {
           </div>
           <div className="table-scroll">
             <table>
-              <thead><tr><th scope="col">HOUSEHOLD</th><th scope="col">WEEKLY USAGE</th><th scope="col">LATEST READING</th><th scope="col">STATUS</th></tr></thead>
+              <thead><tr><th scope="col">HOUSEHOLD</th><th scope="col">WEEKLY USAGE</th><th scope="col">LATEST READING</th><th scope="col">STATUS</th><th scope="col">ACTIONS</th></tr></thead>
               <tbody>
                 {isLoading ? (
-                  <tr><td colSpan="4">Loading database records…</td></tr>
+                  <tr><td colSpan="5">Loading database records…</td></tr>
                 ) : households.length ? (
                   households.map((household) => {
                     const householdReadings = weeklyReadings.filter(
@@ -388,43 +470,66 @@ function App() {
                               : 'Needs reading'}
                           </span>
                         </td>
+                        <td>
+                          <div className="row-actions">
+                              <button
+                                className="row-action"
+                                type="button"
+                                onClick={() => setEditingHousehold(household)}
+                                disabled={isSaving}
+                                aria-label={`Edit ${household.name}`}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="row-action delete-action"
+                                type="button"
+                                onClick={() => handleDeleteHousehold(household)}
+                                disabled={isSaving}
+                                aria-label={`Delete ${household.name}`}
+                              >
+                                Delete
+                              </button>
+                          </div>
+                        </td>
                       </tr>
                     )
                   })
                 ) : (
-                  <tr><td colSpan="4">No households yet. Add one below to get started.</td></tr>
+                  <tr><td colSpan="5">No households yet. Add one below to get started.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
 
+          {editingHousehold && (
+            <form
+              className="entry-form household-entry edit-household-form"
+              key={editingHousehold._id}
+              onSubmit={handleUpdateHousehold}
+            >
+              <h3>Edit {editingHousehold.name}</h3>
+              <HouseholdFields household={editingHousehold} />
+              <div className="form-actions">
+                <button className="submit-button" type="submit" disabled={isSaving}>
+                  {isSaving ? 'Saving…' : 'Update household'}
+                </button>
+                <button
+                  className="cancel-button"
+                  type="button"
+                  onClick={() => setEditingHousehold(null)}
+                  disabled={isSaving}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+
           <details className="data-entry">
             <summary>Add a household</summary>
             <form className="entry-form household-entry" onSubmit={handleCreateHousehold}>
-              <label>
-                Household name
-                <input className="text-field" name="name" required maxLength="120" />
-              </label>
-              <label>
-                Household code
-                <input className="text-field" name="householdCode" required maxLength="120" />
-              </label>
-              <label>
-                District
-                <input className="text-field" name="district" required maxLength="120" />
-              </label>
-              <label>
-                City
-                <input className="text-field" name="city" required maxLength="120" />
-              </label>
-              <label>
-                Residents
-                <input className="text-field" name="residents" type="number" min="1" step="1" required />
-              </label>
-              <label>
-                Daily goal (L/person)
-                <input className="text-field" name="dailyGoal" type="number" min="0" step="0.1" required />
-              </label>
+              <HouseholdFields />
               <button className="submit-button" type="submit" disabled={isSaving}>
                 {isSaving ? 'Saving…' : 'Save household'}
               </button>
