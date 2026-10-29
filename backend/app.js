@@ -80,6 +80,37 @@ export function createApp({
     }),
   )
 
+  app.put(
+    '/api/households/:id',
+    ensureBodyObject,
+    asyncHandler(async (req, res) => {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ error: 'A valid household ID is required.' })
+      }
+
+      const fields = pick(req.body, [
+        'name',
+        'householdCode',
+        'location',
+        'residents',
+        'conservationGoalLitersPerPersonPerDay',
+        'status',
+      ])
+      if (Object.keys(fields).length === 0) {
+        return res.status(400).json({ error: 'At least one supported field is required.' })
+      }
+
+      const household = await HouseholdModel.findById(req.params.id)
+      if (!household) {
+        return res.status(404).json({ error: 'Household not found.' })
+      }
+
+      Object.assign(household, fields)
+      await household.save()
+      res.json(household)
+    }),
+  )
+
   app.get(
     '/api/usage',
     asyncHandler(async (_req, res) => {
@@ -132,6 +163,48 @@ export function createApp({
     }),
   )
 
+  app.put(
+    '/api/usage/:id',
+    ensureBodyObject,
+    asyncHandler(async (req, res) => {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ error: 'A valid usage ID is required.' })
+      }
+
+      const fields = pick(req.body, [
+        'household',
+        'recordedAt',
+        'consumptionLiters',
+        'meterReadingLiters',
+        'source',
+        'notes',
+      ])
+      if (Object.keys(fields).length === 0) {
+        return res.status(400).json({ error: 'At least one supported field is required.' })
+      }
+
+      if (fields.household !== undefined) {
+        if (!mongoose.Types.ObjectId.isValid(fields.household)) {
+          return res.status(400).json({ error: 'A valid household ID is required.' })
+        }
+
+        const household = await HouseholdModel.exists({ _id: fields.household })
+        if (!household) {
+          return res.status(404).json({ error: 'Household not found.' })
+        }
+      }
+
+      const reading = await WaterUsageModel.findById(req.params.id)
+      if (!reading) {
+        return res.status(404).json({ error: 'Usage record not found.' })
+      }
+
+      Object.assign(reading, fields)
+      await reading.save()
+      res.json(reading)
+    }),
+  )
+
   app.get(
     '/api/programs',
     asyncHandler(async (_req, res) => {
@@ -179,6 +252,38 @@ export function createApp({
       )
       await program.save()
       res.status(201).json(program)
+    }),
+  )
+
+  app.put(
+    '/api/programs/:id',
+    ensureBodyObject,
+    asyncHandler(async (req, res) => {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ error: 'A valid program ID is required.' })
+      }
+
+      const fields = pick(req.body, [
+        'name',
+        'description',
+        'startDate',
+        'endDate',
+        'targetReductionPercentage',
+        'status',
+        'participatingHouseholds',
+      ])
+      if (Object.keys(fields).length === 0) {
+        return res.status(400).json({ error: 'At least one supported field is required.' })
+      }
+
+      const program = await ConservationProgramModel.findById(req.params.id)
+      if (!program) {
+        return res.status(404).json({ error: 'Program not found.' })
+      }
+
+      Object.assign(program, fields)
+      await program.save()
+      res.json(program)
     }),
   )
 
