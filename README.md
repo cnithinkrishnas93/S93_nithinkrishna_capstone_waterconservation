@@ -31,3 +31,4 @@ A user-friendly application concept that helps organizations understand water us
 - Real-time water meter integration.
 - Water usage alerts.
 - Historical usage reports.
+Project Status: Initial planning and GitHub setup completed.
