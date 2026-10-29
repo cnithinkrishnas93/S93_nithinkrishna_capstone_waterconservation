@@ -64,11 +64,37 @@ function createMemoryModel(initialRecords = []) {
       return query
     }
 
-    static async exists({ _id }) {
-      return records.some((record) => record._id === _id) ? { _id } : null
+    static async exists(query) {
+      return records.some((record) =>
+        Object.entries(query).every(([field, value]) => record[field] === value),
+      )
+        ? query
+        : null
+    }
+
+    static async updateMany(query, update) {
+      for (const record of records) {
+        const matches = Object.entries(query).every(([field, value]) =>
+          Array.isArray(record[field])
+            ? record[field].includes(value)
+            : record[field] === value,
+        )
+        if (matches && update.$pull) {
+          for (const [field, value] of Object.entries(update.$pull)) {
+            record[field] = record[field].filter((item) => item !== value)
+          }
+        }
+      }
+    }
+
+    static async findByIdAndDelete(id) {
+      const index = records.findIndex((record) => record._id === id)
+      if (index === -1) return null
+      return records.splice(index, 1)[0]
     }
   }
 
+  MemoryModel.records = records
   return MemoryModel
 }
 
@@ -368,4 +394,59 @@ test('PUT endpoints reject non-object or empty supported updates', async (t) => 
     assert.equal(emptyUpdateResponse.status, 400)
     assert.deepEqual(await emptyUpdateResponse.json(), { error: 'At least one supported field is required.' })
   }
+})
+
+test('DELETE household rejects invalid, missing, or referenced households', async (t) => {
+  const recordId = '507f1f77bcf86cd799439011'
+  const app = createApp({
+    HouseholdModel: createMemoryModel([{ _id: recordId, name: 'Greenwood Apartments' }]),
+    WaterUsageModel: createMemoryModel([{ _id: 'usage-1', household: recordId }]),
+    ConservationProgramModel: createMemoryModel(),
+  })
+  const server = app.listen(0)
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))))
+  const baseUrl = `http://127.0.0.1:${server.address().port}/api/households`
+
+  const invalidResponse = await fetch(`${baseUrl}/not-an-object-id`, { method: 'DELETE' })
+  assert.equal(invalidResponse.status, 400)
+  assert.deepEqual(await invalidResponse.json(), { error: 'A valid household ID is required.' })
+
+  const referencedResponse = await fetch(`${baseUrl}/${recordId}`, { method: 'DELETE' })
+  assert.equal(referencedResponse.status, 409)
+  assert.deepEqual(await referencedResponse.json(), {
+    error: 'Households with water usage records cannot be deleted.',
+  })
+
+  const missingResponse = await fetch(`${baseUrl}/507f1f77bcf86cd799439012`, {
+    method: 'DELETE',
+  })
+  assert.equal(missingResponse.status, 404)
+  assert.deepEqual(await missingResponse.json(), { error: 'Household not found.' })
+})
+
+test('DELETE household removes the record and unlinks it from conservation programs', async (t) => {
+  const recordId = '507f1f77bcf86cd799439011'
+  const programs = createMemoryModel([
+    { _id: 'program-1', participatingHouseholds: [recordId, 'another-household'] },
+  ])
+  const app = createApp({
+    HouseholdModel: createMemoryModel([{ _id: recordId, name: 'Greenwood Apartments' }]),
+    WaterUsageModel: createMemoryModel(),
+    ConservationProgramModel: programs,
+  })
+  const server = app.listen(0)
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))))
+  const baseUrl = `http://127.0.0.1:${server.address().port}/api/households/${recordId}`
+
+  const response = await fetch(baseUrl, { method: 'DELETE' })
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), { message: 'Household deleted successfully.' })
+
+  const householdResponse = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/households/${recordId}`,
+  )
+  assert.equal(householdResponse.status, 404)
+  assert.deepEqual(programs.records[0].participatingHouseholds, ['another-household'])
 })

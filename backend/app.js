@@ -111,6 +111,36 @@ export function createApp({
     }),
   )
 
+  app.delete(
+    '/api/households/:id',
+    asyncHandler(async (req, res) => {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ error: 'A valid household ID is required.' })
+      }
+
+      const household = await HouseholdModel.findById(req.params.id)
+      if (!household) {
+        return res.status(404).json({ error: 'Household not found.' })
+      }
+
+      const hasUsageRecords = await WaterUsageModel.exists({
+        household: req.params.id,
+      })
+      if (hasUsageRecords) {
+        return res.status(409).json({
+          error: 'Households with water usage records cannot be deleted.',
+        })
+      }
+
+      await ConservationProgramModel.updateMany(
+        { participatingHouseholds: req.params.id },
+        { $pull: { participatingHouseholds: req.params.id } },
+      )
+      await HouseholdModel.findByIdAndDelete(req.params.id)
+      res.json({ message: 'Household deleted successfully.' })
+    }),
+  )
+
   app.get(
     '/api/usage',
     asyncHandler(async (_req, res) => {

@@ -72,6 +72,7 @@ shows records saved in MongoDB rather than sample data.
 | `GET` | `/api/households/:id` | Read a household by ID |
 | `POST` | `/api/households` | Validate and save a household |
 | `PUT` | `/api/households/:id` | Validate and update supported household fields |
+| `DELETE` | `/api/households/:id` | Delete a household with no usage records and unlink it from programs |
 | `GET` | `/api/usage` | Read the latest 100 readings with household details |
 | `GET` | `/api/usage/:id` | Read a usage record by ID with household details |
 | `POST` | `/api/usage` | Validate and save a reading for an existing household |
@@ -84,5 +85,7 @@ shows records saved in MongoDB rather than sample data.
 
 PUT requests accept one or more supported fields. Unknown fields are ignored,
 and an update with no supported fields is rejected.
+Households with water usage records cannot be deleted, preserving measurement
+history; a delete request for one returns HTTP 409.
 
 Run the backend tests with `cd backend; npm test`.

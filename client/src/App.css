@@ -557,6 +557,11 @@ h2 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.edit-household-form {
+  padding-top: 15px;
+  border-top: 1px solid #edf0f1;
+}
+
 .usage-entry {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   padding-top: 15px;
@@ -609,6 +614,46 @@ h2 {
 }
 
 .submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.form-actions,
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-actions {
+  grid-column: 1 / -1;
+}
+
+.cancel-button,
+.row-action {
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid #dfe7e8;
+  border-radius: 6px;
+  color: #53666d;
+  background: #fff;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.row-action {
+  min-height: 26px;
+  padding: 0 7px;
+}
+
+.delete-action {
+  color: #a64c4c;
+}
+
+.cancel-button:disabled,
+.row-action:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
