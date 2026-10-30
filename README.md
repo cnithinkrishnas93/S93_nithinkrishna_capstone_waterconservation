@@ -71,6 +71,23 @@ household with usage history cannot be deleted.
 Vite proxies `/api` requests to the backend on port `5000`. The dashboard
 shows records saved in MongoDB rather than sample data.
 
+### Deploy the backend to Render
+
+The root `render.yaml` configures a Render web service for the API. Before
+deploying, create a MongoDB Atlas database and allow connections from Render
+(for a student project, Atlas can allow connections from `0.0.0.0/0`; use a
+strong database password). In Render, create a Blueprint from this repository
+and provide the Atlas connection string for `MONGODB_URI` when prompted.
+Render generates a private `JWT_SECRET` automatically.
+
+After the deploy completes, check
+`https://<your-render-service>.onrender.com/api/health`. A successful response
+is `{"status":"ok"}`. Use that service URL as the backend URL when configuring
+the frontend or Bruno collection. If Google sign-in is required, set
+`GOOGLE_CLIENT_ID` in the Render service environment to the same OAuth client
+ID configured for the frontend, and add the deployed frontend origin to that
+OAuth client's authorized JavaScript origins.
+
 ### Username and password authentication
 
 Create an account from the sign-in screen with a username (3-32 letters,
