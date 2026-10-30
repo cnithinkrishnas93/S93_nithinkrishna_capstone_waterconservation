@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
+import jwt from 'jsonwebtoken'
 import test from 'node:test'
 import { createApp } from '../app.js'
 
@@ -192,6 +193,19 @@ test('authentication registers users, signs in, and protects API routes', async 
 
   const unauthorizedResponse = await globalThis.fetch(`${baseUrl}/api/households`)
   assert.equal(unauthorizedResponse.status, 401)
+
+  const invalidTokens = [
+    jwt.sign({ sub: 'user-1', username: 'test_user' }, 'a-different-secret'),
+    jwt.sign({ sub: 'user-1', username: 'test_user' }, testJwtSecret, { expiresIn: -1 }),
+    jwt.sign({ username: 'test_user' }, testJwtSecret),
+    jwt.sign({ sub: 'user-1', username: 'not valid' }, testJwtSecret),
+  ]
+  for (const token of invalidTokens) {
+    const invalidTokenResponse = await globalThis.fetch(`${baseUrl}/api/households`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+    assert.equal(invalidTokenResponse.status, 401)
+  }
 
   const invalidRegistration = await globalThis.fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',

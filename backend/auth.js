@@ -19,6 +19,16 @@ export function createAuthMiddleware(jwtSecret) {
       return res.status(401).json({ error: 'Your session is invalid or has expired. Please sign in again.' })
     }
 
+    if (
+      typeof claims !== 'object'
+      || typeof claims.sub !== 'string'
+      || claims.sub.length === 0
+      || typeof claims.username !== 'string'
+      || !usernamePattern.test(claims.username)
+    ) {
+      return res.status(401).json({ error: 'Your session is invalid or has expired. Please sign in again.' })
+    }
+
     req.auth = claims
     next()
   }
