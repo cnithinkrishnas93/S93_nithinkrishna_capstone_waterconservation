@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import ConservationProgram from '../models/ConservationProgram.js'
 import Household from '../models/Household.js'
+import HouseholdAttachment from '../models/HouseholdAttachment.js'
 import User from '../models/User.js'
 import WaterUsage from '../models/WaterUsage.js'
 
@@ -84,4 +85,72 @@ test('ConservationProgram validates dates, reduction goals, and household refere
 
   program.endDate = new Date('2025-12-31')
   assert.ok(program.validateSync())
+})
+
+test('User normalizes usernames before validating them', () => {
+  const user = new User({
+    username: '  Nithin_01  ',
+    passwordHash: 'hashed-password',
+  })
+
+  assert.equal(user.username, 'nithin_01')
+  assert.equal(user.validateSync(), undefined)
+})
+
+test('Household rejects negative conservation goals and incomplete locations', () => {
+  const household = new Household({
+    name: 'Greenwood Apartments',
+    householdCode: 'HH-003',
+    location: { district: 'North' },
+    residents: 4,
+    conservationGoalLitersPerPersonPerDay: -1,
+  })
+
+  const error = household.validateSync()
+  assert.ok(error.errors['location.city'])
+  assert.ok(error.errors.conservationGoalLitersPerPersonPerDay)
+})
+
+test('WaterUsage rejects unsupported sources and negative meter readings', () => {
+  const usage = new WaterUsage({
+    household: '507f1f77bcf86cd799439011',
+    consumptionLiters: 120,
+    meterReadingLiters: -1,
+    source: 'sensor',
+  })
+
+  const error = usage.validateSync()
+  assert.ok(error.errors.source)
+  assert.ok(error.errors.meterReadingLiters)
+})
+
+test('ConservationProgram enforces reduction percentage and status bounds', () => {
+  const program = new ConservationProgram({
+    name: 'Water Wise Neighborhoods',
+    startDate: '2026-01-01',
+    targetReductionPercentage: 101,
+    status: 'paused',
+  })
+
+  const error = program.validateSync()
+  assert.ok(error.errors.targetReductionPercentage)
+  assert.ok(error.errors.status)
+})
+
+test('HouseholdAttachment validates file metadata, type, and size', () => {
+  const attachment = new HouseholdAttachment({
+    household: '507f1f77bcf86cd799439011',
+    originalName: 'proof.pdf',
+    mimeType: 'application/pdf',
+    size: 12,
+    data: Buffer.from('%PDF-1.7 data'),
+    uploadedBy: 'nithin',
+  })
+
+  assert.equal(attachment.validateSync(), undefined)
+  attachment.mimeType = 'application/x-executable'
+  attachment.size = 5 * 1024 * 1024 + 1
+  const error = attachment.validateSync()
+  assert.ok(error.errors.mimeType)
+  assert.ok(error.errors.size)
 })
