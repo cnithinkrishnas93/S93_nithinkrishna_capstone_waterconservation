@@ -5,7 +5,9 @@ const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
 
 async function apiRequest(path, options = {}) {
   const headers = new Headers(options.headers)
-  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
   const token = localStorage.getItem('bluedropToken')
   if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`)
 
@@ -123,6 +125,7 @@ function App() {
   const [activeSection, setActiveSection] = useState('overview')
   const [households, setHouseholds] = useState([])
   const [readings, setReadings] = useState([])
+  const [attachments, setAttachments] = useState({ householdId: '', items: [] })
   const [editingHousehold, setEditingHousehold] = useState(null)
   const [selectedHousehold, setSelectedHousehold] = useState('')
   const [loadedAt, setLoadedAt] = useState(null)
@@ -274,6 +277,27 @@ function App() {
     }
   }, [authToken])
 
+  useEffect(() => {
+    if (!authToken || !selectedHousehold) {
+      return undefined
+    }
+
+    let active = true
+    apiRequest(`/households/${selectedHousehold}/attachments`)
+      .then((householdAttachments) => {
+        if (active) {
+          setAttachments({ householdId: selectedHousehold, items: householdAttachments })
+        }
+      })
+      .catch((loadError) => {
+        if (active) setError(loadError.message)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [authToken, selectedHousehold])
+
   async function handleAuthentication(event) {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
@@ -308,6 +332,7 @@ function App() {
     setIsLoading(false)
     setHouseholds([])
     setReadings([])
+    setAttachments({ householdId: '', items: [] })
     setLoadedAt(null)
     setApiAvailable(false)
     setError('')
@@ -422,6 +447,66 @@ function App() {
     }
   }
 
+  async function handleUploadAttachment(event) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const formData = new FormData(form)
+    setError('')
+    setNotice('')
+    setIsSaving(true)
+
+    try {
+      const attachment = await apiRequest(
+        `/households/${selectedHousehold}/attachments`,
+        { method: 'POST', body: formData },
+      )
+      setAttachments((current) => ({
+        householdId: selectedHousehold,
+        items: current.householdId === selectedHousehold
+          ? [attachment, ...current.items]
+          : [attachment],
+      }))
+      form.reset()
+      setNotice('Proof file uploaded successfully.')
+    } catch (uploadError) {
+      setError(uploadError.message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function handleDownloadAttachment(attachment) {
+    setError('')
+
+    try {
+      const response = await fetch(`/api/attachments/${attachment._id}/download`, {
+        headers: {
+          Authorization: 'Bearer ' + localStorage.getItem('bluedropToken'),
+        },
+      })
+      if (response.status === 401) {
+        localStorage.removeItem('bluedropToken')
+        localStorage.removeItem('bluedropUsername')
+        window.dispatchEvent(new Event('bluedrop:auth-expired'))
+      }
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || `Download failed with status ${response.status}.`)
+      }
+
+      const downloadUrl = URL.createObjectURL(await response.blob())
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = attachment.originalName
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0)
+    } catch (downloadError) {
+      setError(downloadError.message)
+    }
+  }
+
   const weekStart = loadedAt ? new Date(loadedAt) : null
   if (weekStart) weekStart.setDate(weekStart.getDate() - 7)
   const weeklyReadings = weekStart
@@ -440,6 +525,9 @@ function App() {
   const chartData = loadedAt ? getChartData(readings, period, loadedAt) : []
   const chartMaximum = Math.max(...chartData.map((day) => day.value), 0)
   const chartTotal = chartData.reduce((total, day) => total + day.value, 0)
+  const selectedAttachments = attachments.householdId === selectedHousehold
+    ? attachments.items
+    : []
   const currentMonth = loadedAt
     ? loadedAt.toLocaleDateString('en', { month: 'long', year: 'numeric' })
     : 'Loading…'
@@ -735,6 +823,73 @@ function App() {
               </div>
             </form>
           )}
+
+          <form className="entry-form attachment-form" onSubmit={handleUploadAttachment}>
+            <h3>Upload household proof</h3>
+            <label>
+              Household
+              <select
+                className="text-field"
+                value={selectedHousehold}
+                onChange={(event) => setSelectedHousehold(event.target.value)}
+                required
+                disabled={!households.length || isSaving}
+              >
+                <option value="" disabled>Select a household</option>
+                {households.map((household) => (
+                  <option key={household._id} value={household._id}>
+                    {household.name} ({household.householdCode})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Proof file
+              <input
+                className="text-field"
+                name="file"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,application/pdf"
+                required
+                disabled={!households.length || isSaving}
+              />
+            </label>
+            <p className="attachment-help">PNG, JPEG, WebP, or PDF · maximum 5 MB</p>
+            <button
+              className="submit-button"
+              type="submit"
+              disabled={!households.length || isSaving}
+            >
+              {isSaving ? 'Uploading…' : 'Upload proof'}
+            </button>
+          </form>
+
+          <div className="attachment-list" aria-live="polite">
+            <h3>Uploaded proof</h3>
+            {!selectedHousehold ? (
+              <p>Select a household to view its files.</p>
+            ) : selectedAttachments.length ? (
+              <ul>
+                {selectedAttachments.map((attachment) => (
+                  <li key={attachment._id}>
+                    <span>
+                      <strong>{attachment.originalName}</strong>
+                      <small>{Math.max(1, Math.round(attachment.size / 1024))} KB</small>
+                    </span>
+                    <button
+                      className="row-action"
+                      type="button"
+                      onClick={() => handleDownloadAttachment(attachment)}
+                    >
+                      Download
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>No proof files uploaded for this household yet.</p>
+            )}
+          </div>
 
           <details className="data-entry">
             <summary>Add a household</summary>

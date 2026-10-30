@@ -1,7 +1,9 @@
 import express from 'express'
 import { OAuth2Client } from 'google-auth-library'
+import multer from 'multer'
 import mongoose from 'mongoose'
 import ConservationProgram from './models/ConservationProgram.js'
+import HouseholdAttachment from './models/HouseholdAttachment.js'
 import Household from './models/Household.js'
 import User from './models/User.js'
 import WaterUsage from './models/WaterUsage.js'
@@ -47,8 +49,42 @@ const ensureBodyObject = (req, res, next) => {
   next()
 }
 
+const allowedAttachmentTypes = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'application/pdf',
+])
+const maxAttachmentSize = 5 * 1024 * 1024
+const attachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: maxAttachmentSize, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    callback(null, allowedAttachmentTypes.has(file.mimetype))
+  },
+})
+
+function hasValidFileSignature(file) {
+  const { buffer, mimetype } = file
+  if (mimetype === 'image/png') {
+    return buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+  }
+  if (mimetype === 'image/jpeg') {
+    return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff
+  }
+  if (mimetype === 'image/webp') {
+    return buffer.toString('ascii', 0, 4) === 'RIFF'
+      && buffer.toString('ascii', 8, 12) === 'WEBP'
+  }
+  if (mimetype === 'application/pdf') {
+    return buffer.toString('ascii', 0, 5) === '%PDF-'
+  }
+  return false
+}
+
 export function createApp({
   HouseholdModel = Household,
+  HouseholdAttachmentModel = HouseholdAttachment,
   UserModel = User,
   WaterUsageModel = WaterUsage,
   ConservationProgramModel = ConservationProgram,
@@ -159,6 +195,104 @@ export function createApp({
     }),
   )
 
+  app.get(
+    '/api/households/:id/attachments',
+    asyncHandler(async (req, res) => {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ error: 'A valid household ID is required.' })
+      }
+
+      const household = await HouseholdModel.exists({ _id: req.params.id })
+      if (!household) {
+        return res.status(404).json({ error: 'Household not found.' })
+      }
+
+      const attachments = await HouseholdAttachmentModel.find({
+        household: req.params.id,
+      }).sort({ createdAt: -1 }).lean()
+      res.json(attachments.map(({ _id, originalName, mimeType, size, createdAt }) => ({
+        _id,
+        originalName,
+        mimeType,
+        size,
+        createdAt,
+      })))
+    }),
+  )
+
+  app.post(
+    '/api/households/:id/attachments',
+    (req, res, next) => {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ error: 'A valid household ID is required.' })
+      }
+
+      attachmentUpload.single('file')(req, res, (error) => {
+        if (error) return next(error)
+        next()
+      })
+    },
+    asyncHandler(async (req, res) => {
+      if (!req.file) {
+        return res.status(400).json({
+          error: 'Choose a PNG, JPEG, WebP, or PDF file to upload.',
+        })
+      }
+      if (!hasValidFileSignature(req.file)) {
+        return res.status(400).json({
+          error: 'The file contents do not match its supported file type.',
+        })
+      }
+
+      const household = await HouseholdModel.exists({ _id: req.params.id })
+      if (!household) {
+        return res.status(404).json({ error: 'Household not found.' })
+      }
+
+      const attachment = new HouseholdAttachmentModel({
+        household: req.params.id,
+        originalName: req.file.originalname
+          .replace(/[^a-zA-Z0-9._-]/g, '_')
+          .slice(0, 120) || 'attachment',
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        data: req.file.buffer,
+        uploadedBy: req.auth.sub,
+      })
+      await attachment.save()
+      res.status(201).json({
+        _id: attachment._id,
+        originalName: attachment.originalName,
+        mimeType: attachment.mimeType,
+        size: attachment.size,
+        createdAt: attachment.createdAt,
+      })
+    }),
+  )
+
+  app.get(
+    '/api/attachments/:id/download',
+    asyncHandler(async (req, res) => {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ error: 'A valid attachment ID is required.' })
+      }
+
+      const attachment = await HouseholdAttachmentModel.findById(req.params.id).lean()
+      if (!attachment) {
+        return res.status(404).json({ error: 'Attachment not found.' })
+      }
+
+      const safeName = attachment.originalName.replace(/[^a-zA-Z0-9._-]/g, '_')
+      res.set({
+        'Content-Type': attachment.mimeType,
+        'Content-Length': attachment.size,
+        'Content-Disposition': `attachment; filename="${safeName}"`,
+        'X-Content-Type-Options': 'nosniff',
+      })
+      res.send(attachment.data)
+    }),
+  )
+
   app.put(
     '/api/households/:id',
     ensureBodyObject,
@@ -215,6 +349,7 @@ export function createApp({
         { participatingHouseholds: req.params.id },
         { $pull: { participatingHouseholds: req.params.id } },
       )
+      await HouseholdAttachmentModel.deleteMany({ household: req.params.id })
       await HouseholdModel.findByIdAndDelete(req.params.id)
       res.json({ message: 'Household deleted successfully.' })
     }),
@@ -435,6 +570,14 @@ export function createApp({
 
     if (error.type === 'entity.parse.failed') {
       return res.status(400).json({ error: 'Request body contains invalid JSON.' })
+    }
+
+    if (error instanceof multer.MulterError) {
+      const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400
+      const message = error.code === 'LIMIT_FILE_SIZE'
+        ? 'Files must be 5 MB or smaller.'
+        : 'Upload one file using the "file" field.'
+      return res.status(status).json({ error: message })
     }
 
     console.error('Unhandled API error:', error)
