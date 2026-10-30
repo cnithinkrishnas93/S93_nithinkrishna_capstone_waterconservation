@@ -14,8 +14,24 @@ const userSchema = new mongoose.Schema(
     },
     passwordHash: {
       type: String,
-      required: true,
+      required() {
+        return !this.googleId
+      },
       select: false,
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    email: {
+      type: String,
+      lowercase: true,
+      trim: true,
+    },
+    displayName: {
+      type: String,
+      trim: true,
     },
   },
   { timestamps: true },
