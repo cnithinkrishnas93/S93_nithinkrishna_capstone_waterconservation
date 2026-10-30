@@ -1,0 +1,20 @@
+meta {
+  name: Update usage reading
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/usage/{{usageId}}
+  body: json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "notes": "Corrected meter reading"
+  }
+}

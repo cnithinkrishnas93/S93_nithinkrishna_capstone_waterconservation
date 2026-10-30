@@ -1,0 +1,14 @@
+meta {
+  name: Get usage reading
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/usage/{{usageId}}
+  body: none
+}
+
+auth:bearer {
+  token: {{token}}
+}

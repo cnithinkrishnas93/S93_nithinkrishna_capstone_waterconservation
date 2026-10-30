@@ -1,0 +1,14 @@
+meta {
+  name: Download attachment
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/attachments/{{attachmentId}}/download
+  body: none
+}
+
+auth:bearer {
+  token: {{token}}
+}

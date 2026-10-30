@@ -1,0 +1,14 @@
+meta {
+  name: List usage readings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/usage
+  body: none
+}
+
+auth:bearer {
+  token: {{token}}
+}

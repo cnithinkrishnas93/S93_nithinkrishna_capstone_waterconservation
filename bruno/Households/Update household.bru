@@ -1,0 +1,20 @@
+meta {
+  name: Update household
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/households/{{householdId}}
+  body: json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "status": "inactive"
+  }
+}

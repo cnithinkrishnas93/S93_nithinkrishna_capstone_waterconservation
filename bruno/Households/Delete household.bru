@@ -1,0 +1,14 @@
+meta {
+  name: Delete household
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/api/households/{{householdId}}
+  body: none
+}
+
+auth:bearer {
+  token: {{token}}
+}

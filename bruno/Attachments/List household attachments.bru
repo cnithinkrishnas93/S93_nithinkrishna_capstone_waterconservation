@@ -1,0 +1,14 @@
+meta {
+  name: List household attachments
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/households/{{householdId}}/attachments
+  body: none
+}
+
+auth:bearer {
+  token: {{token}}
+}

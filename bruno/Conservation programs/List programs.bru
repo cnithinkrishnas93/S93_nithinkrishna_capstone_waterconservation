@@ -1,0 +1,14 @@
+meta {
+  name: List programs
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/programs
+  body: none
+}
+
+auth:bearer {
+  token: {{token}}
+}

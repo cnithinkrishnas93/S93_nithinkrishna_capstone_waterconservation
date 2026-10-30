@@ -1,0 +1,25 @@
+meta {
+  name: Create usage reading
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/usage
+  body: json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "household": "{{householdId}}",
+    "recordedAt": "2026-10-30T00:00:00.000Z",
+    "consumptionLiters": 420,
+    "meterReadingLiters": 12420,
+    "source": "manual",
+    "notes": "Morning meter reading"
+  }
+}

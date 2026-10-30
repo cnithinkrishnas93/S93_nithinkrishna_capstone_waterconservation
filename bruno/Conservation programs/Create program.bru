@@ -1,0 +1,26 @@
+meta {
+  name: Create program
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/programs
+  body: json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Save Water Week",
+    "description": "A neighborhood water conservation challenge.",
+    "startDate": "2026-11-01T00:00:00.000Z",
+    "endDate": "2026-11-30T00:00:00.000Z",
+    "targetReductionPercentage": 10,
+    "status": "planned",
+    "participatingHouseholds": ["{{householdId}}"]
+  }
+}
