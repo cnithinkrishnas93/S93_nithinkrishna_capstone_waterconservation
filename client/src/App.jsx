@@ -2,10 +2,20 @@ import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 
 async function apiRequest(path, options = {}) {
+  const headers = new Headers(options.headers)
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const token = localStorage.getItem('bluedropToken')
+  if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`)
+
   const response = await fetch(`/api${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers,
   })
+  if (response.status === 401 && !path.startsWith('/auth/')) {
+    localStorage.removeItem('bluedropToken')
+    localStorage.removeItem('bluedropUsername')
+    window.dispatchEvent(new Event('bluedrop:auth-expired'))
+  }
   const result = await response.json()
 
   if (!response.ok) {
@@ -114,11 +124,25 @@ function App() {
   const [editingHousehold, setEditingHousehold] = useState(null)
   const [selectedHousehold, setSelectedHousehold] = useState('')
   const [loadedAt, setLoadedAt] = useState(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(() => Boolean(localStorage.getItem('bluedropToken')))
   const [isSaving, setIsSaving] = useState(false)
   const [apiAvailable, setApiAvailable] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('bluedropToken') || '')
+  const [authUsername, setAuthUsername] = useState(() => localStorage.getItem('bluedropUsername') || '')
+  const [authMode, setAuthMode] = useState('login')
+
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setAuthToken('')
+      setAuthUsername('')
+      setIsLoading(false)
+      setError('Your session expired. Please sign in again.')
+    }
+    window.addEventListener('bluedrop:auth-expired', handleAuthExpired)
+    return () => window.removeEventListener('bluedrop:auth-expired', handleAuthExpired)
+  }, [])
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -147,6 +171,8 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!authToken) return undefined
+
     let active = true
     Promise.all([apiRequest('/households'), apiRequest('/usage')])
       .then(([householdData, readingData]) => {
@@ -174,7 +200,47 @@ function App() {
     return () => {
       active = false
     }
-  }, [])
+  }, [authToken])
+
+  async function handleAuthentication(event) {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    setError('')
+    setIsSaving(true)
+
+    try {
+      const result = await apiRequest(`/auth/${authMode}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          username: formData.get('username'),
+          password: formData.get('password'),
+        }),
+      })
+      localStorage.setItem('bluedropToken', result.token)
+      localStorage.setItem('bluedropUsername', result.user.username)
+      setAuthUsername(result.user.username)
+      setAuthToken(result.token)
+      setIsLoading(true)
+    } catch (authError) {
+      setError(authError.message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  function handleSignOut() {
+    localStorage.removeItem('bluedropToken')
+    localStorage.removeItem('bluedropUsername')
+    setAuthToken('')
+    setAuthUsername('')
+    setIsLoading(false)
+    setHouseholds([])
+    setReadings([])
+    setLoadedAt(null)
+    setApiAvailable(false)
+    setError('')
+    setNotice('')
+  }
 
   async function handleCreateHousehold(event) {
     event.preventDefault()
@@ -306,6 +372,68 @@ function App() {
     ? loadedAt.toLocaleDateString('en', { month: 'long', year: 'numeric' })
     : 'Loading…'
 
+  if (!authToken) {
+    return (
+      <main className="auth-page">
+        <form className="auth-card" onSubmit={handleAuthentication}>
+          <a className="brand auth-brand" href="#login" aria-label="BlueDrop home">
+            <span className="brand-mark"><DropIcon /></span>
+            <span>Blue<span className="brand-accent">Drop</span></span>
+          </a>
+          <p className="eyebrow">WATER CONSERVATION WORKSPACE</p>
+          <h1>{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
+          <p className="auth-description">
+            {authMode === 'login'
+              ? 'Sign in with your username and password to view your dashboard.'
+              : 'Register with a username and password to get started.'}
+          </p>
+          {error && <p className="form-message error-message" role="alert">{error}</p>}
+          <label>
+            Username
+            <input
+              className="text-field"
+              name="username"
+              autoComplete="username"
+              minLength="3"
+              maxLength="32"
+              pattern="[A-Za-z0-9_]+"
+              required
+            />
+          </label>
+          <label>
+            Password
+            <input
+              className="text-field"
+              name="password"
+              type="password"
+              autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+              minLength="8"
+              maxLength="72"
+              required
+            />
+          </label>
+          <button className="submit-button auth-submit" type="submit" disabled={isSaving}>
+            {isSaving
+              ? 'Please wait…'
+              : authMode === 'login' ? 'Sign in' : 'Create account'}
+          </button>
+          <p className="auth-switch">
+            {authMode === 'login' ? 'New to BlueDrop?' : 'Already registered?'}{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode(authMode === 'login' ? 'register' : 'login')
+                setError('')
+              }}
+            >
+              {authMode === 'login' ? 'Create an account' : 'Sign in'}
+            </button>
+          </p>
+        </form>
+      </main>
+    )
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -336,8 +464,8 @@ function App() {
 
         <div className="sidebar-profile">
           <div className="avatar" aria-hidden="true">NK</div>
-          <div><strong>Project admin</strong><span>Water team</span></div>
-          <span className="profile-menu" aria-hidden="true">···</span>
+          <div><strong>{authUsername || 'Signed in'}</strong><span>Water team</span></div>
+          <button className="sign-out-button" type="button" onClick={handleSignOut}>Sign out</button>
         </div>
       </aside>
 

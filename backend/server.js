@@ -4,9 +4,14 @@ import app from './app.js'
 
 const port = Number(process.env.PORT || 5000)
 const mongoUri = process.env.MONGODB_URI
+const jwtSecret = process.env.JWT_SECRET
 
 if (!mongoUri) {
   throw new Error('MONGODB_URI is required. Copy .env.example to .env and configure your MongoDB connection.')
+}
+
+if (!jwtSecret || jwtSecret.length < 32) {
+  throw new Error('JWT_SECRET must contain at least 32 characters. Set a private random secret in .env.')
 }
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {

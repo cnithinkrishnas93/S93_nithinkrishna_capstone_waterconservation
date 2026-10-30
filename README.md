@@ -49,8 +49,9 @@ household with usage history cannot be deleted.
 ### Run the application
 
 1. Install and start MongoDB locally, or create a MongoDB Atlas database.
-2. In `backend/`, copy `.env.example` to `.env` and set `MONGODB_URI` to your
-   connection string. Keep `.env` private; it is ignored by Git.
+2. In `backend/`, copy `.env.example` to `.env`, set `MONGODB_URI` to your
+   connection string, and set `JWT_SECRET` to a private random value of at
+   least 32 characters. Keep `.env` private; it is ignored by Git.
 3. Install and start the backend:
 
    ```bash
@@ -70,10 +71,22 @@ household with usage history cannot be deleted.
 Vite proxies `/api` requests to the backend on port `5000`. The dashboard
 shows records saved in MongoDB rather than sample data.
 
+### Username and password authentication
+
+Create an account from the sign-in screen with a username (3-32 letters,
+numbers, or underscores) and a password of at least 8 characters. Passwords
+are stored as bcrypt hashes. Sign-in issues a short-lived JWT that the client
+uses to authenticate dashboard API requests; signing out removes the saved
+token. Registration and sign-in are available at `POST /api/auth/register`
+and `POST /api/auth/login`. All other API endpoints require a valid bearer
+token.
+
 ### API endpoints
 
 | Method | Endpoint | Database operation |
 | --- | --- | --- |
+| `POST` | `/api/auth/register` | Register a username and password |
+| `POST` | `/api/auth/login` | Verify credentials and issue a JWT |
 | `GET` | `/api/households` | Read the latest 100 households |
 | `GET` | `/api/households/:id` | Read a household by ID |
 | `POST` | `/api/households` | Validate and save a household |
