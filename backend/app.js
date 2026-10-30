@@ -2,7 +2,9 @@ import express from 'express'
 import mongoose from 'mongoose'
 import ConservationProgram from './models/ConservationProgram.js'
 import Household from './models/Household.js'
+import User from './models/User.js'
 import WaterUsage from './models/WaterUsage.js'
+import { authenticateUser, createAuthMiddleware, registerUser } from './auth.js'
 
 const asyncHandler = (handler) => (req, res, next) => {
   Promise.resolve(handler(req, res, next)).catch(next)
@@ -41,8 +43,11 @@ const ensureBodyObject = (req, res, next) => {
 
 export function createApp({
   HouseholdModel = Household,
+  UserModel = User,
   WaterUsageModel = WaterUsage,
   ConservationProgramModel = ConservationProgram,
+  jwtSecret = process.env.JWT_SECRET,
+  passwordHashRounds = 12,
 } = {}) {
   const app = express()
 
@@ -56,6 +61,37 @@ export function createApp({
       res.status(connected ? 200 : 503).json({ status: connected ? 'ok' : 'database unavailable' })
     },
   )
+
+  app.post(
+    '/api/auth/register',
+    ensureBodyObject,
+    asyncHandler(async (req, res) => {
+      const result = await registerUser({
+        UserModel,
+        jwtSecret,
+        username: req.body.username,
+        password: req.body.password,
+        saltRounds: passwordHashRounds,
+      })
+      res.status(result.status).json(result.body)
+    }),
+  )
+
+  app.post(
+    '/api/auth/login',
+    ensureBodyObject,
+    asyncHandler(async (req, res) => {
+      const result = await authenticateUser({
+        UserModel,
+        jwtSecret,
+        username: req.body.username,
+        password: req.body.password,
+      })
+      res.status(result.status).json(result.body)
+    }),
+  )
+
+  app.use('/api', createAuthMiddleware(jwtSecret))
 
   app.get(
     '/api/households',

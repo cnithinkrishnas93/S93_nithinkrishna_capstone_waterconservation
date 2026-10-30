@@ -12,6 +12,20 @@ function createMemoryModel(initialRecords = []) {
       Object.assign(this, fields)
     }
 
+    static findOne(query) {
+      const result = records.find((record) =>
+        Object.entries(query).every(([field, value]) => record[field] === value),
+      ) || null
+      return {
+        select() {
+          return Promise.resolve(result)
+        },
+        then(resolve, reject) {
+          return Promise.resolve(result).then(resolve, reject)
+        },
+      }
+    }
+
     async save() {
       this._id = `record-${nextId++}`
       this.createdAt = new Date()
@@ -99,12 +113,43 @@ function createMemoryModel(initialRecords = []) {
 }
 
 const householdId = '507f1f77bcf86cd799439011'
+const testJwtSecret = 'test-secret-with-at-least-thirty-two-characters'
+const tokensByOrigin = new Map()
+
+function createTestApp(options) {
+  return createApp({
+    ...options,
+    UserModel: createMemoryModel(),
+    jwtSecret: testJwtSecret,
+    passwordHashRounds: 4,
+  })
+}
+
+const fetch = async (input, options = {}) => {
+  const url = new URL(input)
+  let token = tokensByOrigin.get(url.origin)
+  if (!token) {
+    const response = await globalThis.fetch(`${url.origin}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'test_user', password: 'correct-horse-battery' }),
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Unable to authenticate API test request.')
+    token = result.token
+    tokensByOrigin.set(url.origin, token)
+  }
+
+  const headers = new Headers(options.headers)
+  headers.set('authorization', `Bearer ${token}`)
+  return globalThis.fetch(input, { ...options, headers })
+}
 
 test('household API reads records and persists new household records', async (t) => {
   const HouseholdModel = createMemoryModel([
     { _id: householdId, name: 'Greenwood Apartments', householdCode: 'HH-001' },
   ])
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel,
     WaterUsageModel: createMemoryModel(),
     ConservationProgramModel: createMemoryModel(),
@@ -134,6 +179,66 @@ test('household API reads records and persists new household records', async (t)
   assert.equal('unexpectedField' in createdHousehold, false)
 })
 
+test('authentication registers users, signs in, and protects API routes', async (t) => {
+  const app = createTestApp({
+    HouseholdModel: createMemoryModel(),
+    WaterUsageModel: createMemoryModel(),
+    ConservationProgramModel: createMemoryModel(),
+  })
+  const server = app.listen(0)
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))))
+  const baseUrl = `http://127.0.0.1:${server.address().port}`
+
+  const unauthorizedResponse = await globalThis.fetch(`${baseUrl}/api/households`)
+  assert.equal(unauthorizedResponse.status, 401)
+
+  const invalidRegistration = await globalThis.fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'no', password: 'short' }),
+  })
+  assert.equal(invalidRegistration.status, 400)
+
+  const registration = await globalThis.fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'River_User', password: 'strong-password-123' }),
+  })
+  const registeredUser = await registration.json()
+  assert.equal(registration.status, 201)
+  assert.equal(registeredUser.user.username, 'river_user')
+  assert.ok(registeredUser.token)
+
+  const duplicateRegistration = await globalThis.fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'river_user', password: 'another-password' }),
+  })
+  assert.equal(duplicateRegistration.status, 409)
+
+  const failedLogin = await globalThis.fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'river_user', password: 'wrong-password' }),
+  })
+  assert.equal(failedLogin.status, 401)
+
+  const login = await globalThis.fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'RIVER_USER', password: 'strong-password-123' }),
+  })
+  const signedInUser = await login.json()
+  assert.equal(login.status, 200)
+  assert.equal(signedInUser.user.username, 'river_user')
+
+  const authorizedResponse = await globalThis.fetch(`${baseUrl}/api/households`, {
+    headers: { authorization: `Bearer ${signedInUser.token}` },
+  })
+  assert.equal(authorizedResponse.status, 200)
+})
+
 test('detail GET endpoints return records and handle invalid or missing IDs', async (t) => {
   const recordId = '507f1f77bcf86cd799439011'
   const endpoints = [
@@ -156,7 +261,7 @@ test('detail GET endpoints return records and handle invalid or missing IDs', as
       invalidError: 'A valid program ID is required.',
     },
   ]
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel: createMemoryModel([endpoints[0].record]),
     WaterUsageModel: createMemoryModel([endpoints[1].record]),
     ConservationProgramModel: createMemoryModel([endpoints[2].record]),
@@ -182,7 +287,7 @@ test('detail GET endpoints return records and handle invalid or missing IDs', as
 })
 
 test('program API persists new conservation programs and filters unknown fields', async (t) => {
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel: createMemoryModel(),
     WaterUsageModel: createMemoryModel(),
     ConservationProgramModel: createMemoryModel(),
@@ -215,7 +320,7 @@ test('program API persists new conservation programs and filters unknown fields'
 test('program creation validates participating household references', async (t) => {
   const households = createMemoryModel([{ _id: householdId }])
   const programs = createMemoryModel()
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel: households,
     WaterUsageModel: createMemoryModel(),
     ConservationProgramModel: programs,
@@ -267,7 +372,7 @@ test('program updates validate participating household references', async (t) =>
   const programs = createMemoryModel([
     { _id: programId, participatingHouseholds: [] },
   ])
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel: households,
     WaterUsageModel: createMemoryModel(),
     ConservationProgramModel: programs,
@@ -303,7 +408,7 @@ test('program updates validate participating household references', async (t) =>
 })
 
 test('POST endpoints reject non-object request bodies', async (t) => {
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel: createMemoryModel(),
     WaterUsageModel: createMemoryModel(),
     ConservationProgramModel: createMemoryModel(),
@@ -327,7 +432,7 @@ test('POST endpoints reject non-object request bodies', async (t) => {
 test('usage API persists readings for existing households and rejects missing households', async (t) => {
   const HouseholdModel = createMemoryModel([{ _id: householdId }])
   const WaterUsageModel = createMemoryModel()
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel,
     WaterUsageModel,
     ConservationProgramModel: createMemoryModel(),
@@ -386,7 +491,7 @@ test('PUT endpoints update allowed fields and reject invalid or missing records'
       invalidError: 'A valid program ID is required.',
     },
   ]
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel: createMemoryModel([
       { _id: recordId, name: 'Old name', householdCode: 'HH-001' },
       { _id: householdId, name: 'Water saving household' },
@@ -429,7 +534,7 @@ test('PUT endpoints update allowed fields and reject invalid or missing records'
 })
 
 test('PUT usage rejects invalid or missing household references', async (t) => {
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel: createMemoryModel(),
     WaterUsageModel: createMemoryModel([
       { _id: '507f1f77bcf86cd799439011', consumptionLiters: 500 },
@@ -457,7 +562,7 @@ test('PUT usage rejects invalid or missing household references', async (t) => {
 })
 
 test('PUT endpoints reject non-object or empty supported updates', async (t) => {
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel: createMemoryModel(),
     WaterUsageModel: createMemoryModel(),
     ConservationProgramModel: createMemoryModel(),
@@ -488,7 +593,7 @@ test('PUT endpoints reject non-object or empty supported updates', async (t) => 
 
 test('DELETE household rejects invalid, missing, or referenced households', async (t) => {
   const recordId = '507f1f77bcf86cd799439011'
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel: createMemoryModel([{ _id: recordId, name: 'Greenwood Apartments' }]),
     WaterUsageModel: createMemoryModel([{ _id: 'usage-1', household: recordId }]),
     ConservationProgramModel: createMemoryModel(),
@@ -520,7 +625,7 @@ test('DELETE household removes the record and unlinks it from conservation progr
   const programs = createMemoryModel([
     { _id: 'program-1', participatingHouseholds: [recordId, 'another-household'] },
   ])
-  const app = createApp({
+  const app = createTestApp({
     HouseholdModel: createMemoryModel([{ _id: recordId, name: 'Greenwood Apartments' }]),
     WaterUsageModel: createMemoryModel(),
     ConservationProgramModel: programs,
