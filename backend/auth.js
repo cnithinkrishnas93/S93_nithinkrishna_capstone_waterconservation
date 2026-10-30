@@ -99,3 +99,74 @@ export async function authenticateUser({ UserModel, jwtSecret, username, passwor
     },
   }
 }
+
+export async function authenticateGoogleUser({
+  UserModel,
+  jwtSecret,
+  credential,
+  googleAuthClient,
+  googleClientId,
+}) {
+  if (typeof credential !== 'string' || credential.length === 0) {
+    return { status: 400, body: { error: 'A Google credential is required.' } }
+  }
+
+  if (!googleClientId) {
+    return { status: 503, body: { error: 'Google sign-in is not configured on this server.' } }
+  }
+
+  let claims
+  try {
+    const ticket = await googleAuthClient.verifyIdToken({
+      idToken: credential,
+      audience: googleClientId,
+    })
+    claims = ticket.getPayload()
+  } catch (error) {
+    if (error?.name === 'GaxiosError') throw error
+    return { status: 401, body: { error: 'The Google sign-in credential is invalid or expired.' } }
+  }
+
+  if (
+    !claims
+    || typeof claims.sub !== 'string'
+    || !claims.sub
+    || typeof claims.email !== 'string'
+    || !claims.email.includes('@')
+    || claims.email_verified !== true
+  ) {
+    return { status: 401, body: { error: 'A verified Google account is required.' } }
+  }
+
+  let user = await UserModel.findOne({ googleId: claims.sub })
+  if (!user) {
+    const emailPrefix = claims.email.split('@')[0]
+    const normalizedPrefix = emailPrefix.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 32)
+    const baseUsername = normalizedPrefix.length >= 3 ? normalizedPrefix : 'googleuser'
+    let username = baseUsername
+    let suffix = 1
+    while (await UserModel.findOne({ username })) {
+      const suffixText = `_${suffix++}`
+      username = `${baseUsername.slice(0, 32 - suffixText.length)}${suffixText}`
+    }
+
+    user = new UserModel({
+      username,
+      googleId: claims.sub,
+      email: claims.email,
+      displayName: typeof claims.name === 'string' ? claims.name : '',
+    })
+    await user.save()
+  }
+
+  return {
+    status: 200,
+    body: {
+      token: jwt.sign({ sub: String(user._id), username: user.username }, jwtSecret, {
+        algorithm: 'HS256',
+        expiresIn: '1h',
+      }),
+      user: { username: user.username },
+    },
+  }
+}

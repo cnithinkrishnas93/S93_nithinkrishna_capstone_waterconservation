@@ -2,7 +2,26 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import ConservationProgram from '../models/ConservationProgram.js'
 import Household from '../models/Household.js'
+import User from '../models/User.js'
 import WaterUsage from '../models/WaterUsage.js'
+
+test('User supports password and verified Google identities', () => {
+  const passwordUser = new User({
+    username: 'password_user',
+    passwordHash: 'hashed-password',
+  })
+  const googleUser = new User({
+    username: 'google_user',
+    googleId: 'google-sub-123',
+    email: 'google@example.com',
+  })
+
+  assert.equal(passwordUser.validateSync(), undefined)
+  assert.equal(googleUser.validateSync(), undefined)
+  assert.ok(new User({ username: 'missing_auth' }).validateSync())
+  assert.equal(User.schema.path('googleId').options.unique, true)
+  assert.equal(User.schema.path('googleId').options.sparse, true)
+})
 
 test('Household requires a unique code, location, and whole-number resident count', () => {
   const household = new Household({

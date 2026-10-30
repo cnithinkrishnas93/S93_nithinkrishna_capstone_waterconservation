@@ -253,6 +253,89 @@ test('authentication registers users, signs in, and protects API routes', async 
   assert.equal(authorizedResponse.status, 200)
 })
 
+test('Google authentication verifies accounts, reuses users, and issues API JWTs', async (t) => {
+  const UserModel = createMemoryModel([
+    { _id: 'existing-user', username: 'river', passwordHash: 'unrelated-hash' },
+  ])
+  const googleAuthClient = {
+    async verifyIdToken({ idToken, audience }) {
+      assert.equal(idToken, 'valid-google-credential')
+      assert.equal(audience, 'test-google-client-id')
+      return {
+        getPayload: () => ({
+          sub: 'google-sub-123',
+          email: 'river@example.com',
+          email_verified: true,
+          name: 'River User',
+        }),
+      }
+    },
+  }
+  const app = createApp({
+    HouseholdModel: createMemoryModel(),
+    UserModel,
+    WaterUsageModel: createMemoryModel(),
+    ConservationProgramModel: createMemoryModel(),
+    jwtSecret: testJwtSecret,
+    googleClientId: 'test-google-client-id',
+    googleAuthClient,
+  })
+  const server = app.listen(0)
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))))
+  const url = `http://127.0.0.1:${server.address().port}/api/auth/google`
+  const request = () => globalThis.fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ credential: 'valid-google-credential' }),
+  })
+
+  const firstLogin = await request()
+  const firstResult = await firstLogin.json()
+  assert.equal(firstLogin.status, 200)
+  assert.equal(firstResult.user.username, 'river_1')
+  assert.equal(jwt.verify(firstResult.token, testJwtSecret).sub, 'record-1')
+  assert.equal(UserModel.records[1].googleId, 'google-sub-123')
+  assert.equal(UserModel.records[1].email, 'river@example.com')
+
+  const secondLogin = await request()
+  const secondResult = await secondLogin.json()
+  assert.equal(secondLogin.status, 200)
+  assert.equal(secondResult.user.username, firstResult.user.username)
+  assert.equal(UserModel.records.length, 2)
+})
+
+test('Google authentication rejects unverified emails and missing credentials', async (t) => {
+  const app = createApp({
+    HouseholdModel: createMemoryModel(),
+    UserModel: createMemoryModel(),
+    WaterUsageModel: createMemoryModel(),
+    ConservationProgramModel: createMemoryModel(),
+    jwtSecret: testJwtSecret,
+    googleClientId: 'test-google-client-id',
+    googleAuthClient: {
+      async verifyIdToken() {
+        return { getPayload: () => ({ sub: 'google-sub-123', email: 'user@example.com', email_verified: false }) }
+      },
+    },
+  })
+  const server = app.listen(0)
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))))
+  const url = `http://127.0.0.1:${server.address().port}/api/auth/google`
+  const request = (body) => globalThis.fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  const missingCredential = await request({})
+  assert.equal(missingCredential.status, 400)
+  const unverifiedAccount = await request({ credential: 'unverified-google-credential' })
+  assert.equal(unverifiedAccount.status, 401)
+  assert.equal((await unverifiedAccount.json()).error, 'A verified Google account is required.')
+})
+
 test('detail GET endpoints return records and handle invalid or missing IDs', async (t) => {
   const recordId = '507f1f77bcf86cd799439011'
   const endpoints = [

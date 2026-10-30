@@ -1,10 +1,16 @@
 import express from 'express'
+import { OAuth2Client } from 'google-auth-library'
 import mongoose from 'mongoose'
 import ConservationProgram from './models/ConservationProgram.js'
 import Household from './models/Household.js'
 import User from './models/User.js'
 import WaterUsage from './models/WaterUsage.js'
-import { authenticateUser, createAuthMiddleware, registerUser } from './auth.js'
+import {
+  authenticateGoogleUser,
+  authenticateUser,
+  createAuthMiddleware,
+  registerUser,
+} from './auth.js'
 
 const asyncHandler = (handler) => (req, res, next) => {
   Promise.resolve(handler(req, res, next)).catch(next)
@@ -47,6 +53,8 @@ export function createApp({
   WaterUsageModel = WaterUsage,
   ConservationProgramModel = ConservationProgram,
   jwtSecret = process.env.JWT_SECRET,
+  googleClientId = process.env.GOOGLE_CLIENT_ID,
+  googleAuthClient = new OAuth2Client(),
   passwordHashRounds = 12,
 } = {}) {
   const app = express()
@@ -86,6 +94,21 @@ export function createApp({
         jwtSecret,
         username: req.body.username,
         password: req.body.password,
+      })
+      res.status(result.status).json(result.body)
+    }),
+  )
+
+  app.post(
+    '/api/auth/google',
+    ensureBodyObject,
+    asyncHandler(async (req, res) => {
+      const result = await authenticateGoogleUser({
+        UserModel,
+        jwtSecret,
+        credential: req.body.credential,
+        googleAuthClient,
+        googleClientId,
       })
       res.status(result.status).json(result.body)
     }),

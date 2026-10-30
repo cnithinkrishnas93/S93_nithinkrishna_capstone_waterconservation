@@ -81,12 +81,28 @@ token. Registration and sign-in are available at `POST /api/auth/register`
 and `POST /api/auth/login`. All other API endpoints require a valid bearer
 token.
 
+### Google authentication
+
+Google sign-in uses Google Identity Services to obtain an ID token in the
+browser. The backend verifies that token against the configured OAuth client
+ID before creating or finding the Google account and issuing the same short-lived
+API JWT used by the dashboard. Google accounts must have a verified email.
+
+Create a Web application OAuth client in Google Cloud Console. Add the
+development origin (for example `http://localhost:5173`) to its authorized
+JavaScript origins. Set `GOOGLE_CLIENT_ID` in `backend/.env` and
+`VITE_GOOGLE_CLIENT_ID` in `client/.env`; these values must refer to the same
+OAuth client. The client ID is public configuration, but never expose an OAuth
+client secret in the frontend or commit local environment files. Restart both
+servers after changing environment variables.
+
 ### API endpoints
 
 | Method | Endpoint | Database operation |
 | --- | --- | --- |
 | `POST` | `/api/auth/register` | Register a username and password |
 | `POST` | `/api/auth/login` | Verify credentials and issue a JWT |
+| `POST` | `/api/auth/google` | Verify a Google ID token and issue a JWT |
 | `GET` | `/api/households` | Read the latest 100 households |
 | `GET` | `/api/households/:id` | Read a household by ID |
 | `POST` | `/api/households` | Validate and save a household |

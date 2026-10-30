@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
+
 async function apiRequest(path, options = {}) {
   const headers = new Headers(options.headers)
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -143,6 +145,76 @@ function App() {
     window.addEventListener('bluedrop:auth-expired', handleAuthExpired)
     return () => window.removeEventListener('bluedrop:auth-expired', handleAuthExpired)
   }, [])
+
+  useEffect(() => {
+    if (authToken || !googleClientId) return undefined
+
+    const buttonContainer = document.getElementById('googleSignInButton')
+    if (!buttonContainer) return undefined
+
+    const script = document.querySelector('script[data-google-identity]')
+      || document.createElement('script')
+    const renderGoogleButton = () => {
+      if (!window.google?.accounts?.id || !buttonContainer.isConnected) return
+
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: async ({ credential }) => {
+          if (!credential) {
+            setError('Google did not return a sign-in credential. Please try again.')
+            return
+          }
+
+          setError('')
+          setIsSaving(true)
+          try {
+            const result = await apiRequest('/auth/google', {
+              method: 'POST',
+              body: JSON.stringify({ credential }),
+            })
+            localStorage.setItem('bluedropToken', result.token)
+            localStorage.setItem('bluedropUsername', result.user.username)
+            setAuthUsername(result.user.username)
+            setAuthToken(result.token)
+            setIsLoading(true)
+          } catch (authError) {
+            setError(authError.message)
+          } finally {
+            setIsSaving(false)
+          }
+        },
+      })
+      window.google.accounts.id.renderButton(buttonContainer, {
+        theme: 'outline',
+        size: 'large',
+        text: 'continue_with',
+        shape: 'rectangular',
+        width: Math.min(354, buttonContainer.clientWidth),
+      })
+    }
+    const handleGoogleScriptError = () => {
+      setError('Google sign-in could not load. Check your connection and try again.')
+    }
+
+    if (window.google?.accounts?.id) {
+      renderGoogleButton()
+    } else {
+      script.addEventListener('load', renderGoogleButton)
+      script.addEventListener('error', handleGoogleScriptError)
+      if (!script.dataset.googleIdentity) {
+        script.src = 'https://accounts.google.com/gsi/client'
+        script.async = true
+        script.defer = true
+        script.dataset.googleIdentity = 'true'
+      }
+      if (!script.isConnected) document.head.appendChild(script)
+    }
+
+    return () => {
+      script.removeEventListener('load', renderGoogleButton)
+      script.removeEventListener('error', handleGoogleScriptError)
+    }
+  }, [authToken])
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -388,6 +460,16 @@ function App() {
               : 'Register with a username and password to get started.'}
           </p>
           {error && <p className="form-message error-message" role="alert">{error}</p>}
+          {googleClientId ? (
+            <div className="google-sign-in">
+              <div id="googleSignInButton" />
+              <div className="auth-divider"><span>or use your username</span></div>
+            </div>
+          ) : (
+            <p className="google-setup-message">
+              Google sign-in requires a configured Google OAuth client ID.
+            </p>
+          )}
           <label>
             Username
             <input
