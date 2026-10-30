@@ -1,0 +1,14 @@
+meta {
+  name: List households
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/households
+  body: none
+}
+
+auth:bearer {
+  token: {{token}}
+}

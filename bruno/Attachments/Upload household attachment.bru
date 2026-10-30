@@ -1,0 +1,18 @@
+meta {
+  name: Upload household attachment
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/households/{{householdId}}/attachments
+  body: multipartForm
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:multipart-form {
+  file: @file(./path/to/proof.pdf)
+}

@@ -133,3 +133,19 @@ reference. File listings expose metadata only, and downloads require
 authentication.
 
 Run the backend tests with `cd backend; npm test`.
+
+### Bruno API collection
+
+The `bruno/` folder contains a Bruno collection for every API endpoint,
+including example JSON request bodies and the bearer-token requirements for
+protected routes. Open that folder in Bruno, select the `Local` environment,
+and set `baseUrl` to the backend URL if it differs from
+`http://localhost:5000`.
+
+Start the backend and MongoDB, then send **Register** or **Login** from the
+Authentication folder. Copy the returned JWT into the `token` variable in
+the `Local` environment before sending protected requests. Replace the sample
+IDs with IDs returned by your own requests. For **Upload household
+attachment**, change the example file path to a local PNG, JPEG, WebP, or PDF
+file no larger than 5 MB. Do not put real passwords, tokens, or private
+environment values in the collection.

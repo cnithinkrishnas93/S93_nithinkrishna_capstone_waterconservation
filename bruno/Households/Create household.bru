@@ -1,0 +1,29 @@
+meta {
+  name: Create household
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/households
+  body: json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "name": "Riverbank Household",
+    "householdCode": "RIVER-001",
+    "location": {
+      "neighborhood": "Riverbank",
+      "district": "Central",
+      "city": "Chennai"
+    },
+    "residents": 4,
+    "conservationGoalLitersPerPersonPerDay": 120,
+    "status": "active"
+  }
+}

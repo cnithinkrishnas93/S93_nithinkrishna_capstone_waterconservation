@@ -1,0 +1,20 @@
+meta {
+  name: Update program
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/programs/{{programId}}
+  body: json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "status": "active"
+  }
+}
