@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import jwt from 'jsonwebtoken'
+import mongoose from 'mongoose'
 import test from 'node:test'
 import { createApp } from '../app.js'
 
@@ -34,8 +35,12 @@ function createMemoryModel(initialRecords = []) {
       return this
     }
 
-    static find() {
-      let result = [...records]
+    static find(filter = {}) {
+      let result = records.filter((record) =>
+        Object.entries(filter).every(([field, value]) =>
+          String(record[field]) === String(value),
+        ),
+      )
       const query = {
         sort() {
           return this
@@ -106,6 +111,17 @@ function createMemoryModel(initialRecords = []) {
       const index = records.findIndex((record) => record._id === id)
       if (index === -1) return null
       return records.splice(index, 1)[0]
+    }
+
+    static async deleteMany(filter) {
+      const remainingRecords = records.filter((record) =>
+        !Object.entries(filter).every(([field, value]) =>
+          String(record[field]) === String(value),
+        ),
+      )
+      const deletedCount = records.length - remainingRecords.length
+      records.splice(0, records.length, ...remainingRecords)
+      return { deletedCount }
     }
   }
 
@@ -178,6 +194,96 @@ test('household API reads records and persists new household records', async (t)
   assert.equal(createResponse.status, 201)
   assert.equal(createdHousehold.householdCode, 'HH-002')
   assert.equal('unexpectedField' in createdHousehold, false)
+})
+
+test('household attachments accept verified files and return metadata without file data', async (t) => {
+  const HouseholdModel = createMemoryModel([
+    { _id: householdId, name: 'Greenwood Apartments', householdCode: 'HH-001' },
+  ])
+  const HouseholdAttachmentModel = createMemoryModel()
+  const app = createTestApp({
+    HouseholdModel,
+    HouseholdAttachmentModel,
+    WaterUsageModel: createMemoryModel(),
+    ConservationProgramModel: createMemoryModel(),
+  })
+  const server = app.listen(0)
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))))
+  const baseUrl = `http://127.0.0.1:${server.address().port}`
+  const fileBytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+
+  const unauthorizedForm = new FormData()
+  unauthorizedForm.append('file', new Blob([fileBytes], { type: 'image/png' }), 'proof.png')
+  const unauthorizedResponse = await globalThis.fetch(
+    `${baseUrl}/api/households/${householdId}/attachments`,
+    { method: 'POST', body: unauthorizedForm },
+  )
+  assert.equal(unauthorizedResponse.status, 401)
+
+  const form = new FormData()
+  form.append('file', new Blob([fileBytes], { type: 'image/png' }), 'water-proof.png')
+  const uploadResponse = await fetch(
+    `${baseUrl}/api/households/${householdId}/attachments`,
+    { method: 'POST', body: form },
+  )
+  assert.equal(uploadResponse.status, 201)
+  const uploadedAttachment = await uploadResponse.json()
+  assert.equal(uploadedAttachment.originalName, 'water-proof.png')
+  assert.equal(uploadedAttachment.mimeType, 'image/png')
+  assert.equal(uploadedAttachment.size, fileBytes.length)
+  assert.equal('data' in uploadedAttachment, false)
+  assert.equal(HouseholdAttachmentModel.records[0].uploadedBy, 'record-1')
+
+  const listResponse = await fetch(
+    `${baseUrl}/api/households/${householdId}/attachments`,
+  )
+  const listedAttachments = await listResponse.json()
+  assert.equal(listResponse.status, 200)
+  assert.equal(listedAttachments.length, 1)
+  assert.equal(listedAttachments[0].originalName, 'water-proof.png')
+  assert.equal('data' in listedAttachments[0], false)
+
+  const attachmentId = new mongoose.Types.ObjectId().toString()
+  HouseholdAttachmentModel.records[0]._id = attachmentId
+  const downloadResponse = await fetch(
+    `${baseUrl}/api/attachments/${attachmentId}/download`,
+  )
+  assert.equal(downloadResponse.status, 200)
+  assert.equal(downloadResponse.headers.get('content-type'), 'image/png')
+  assert.equal(downloadResponse.headers.get('content-disposition'), 'attachment; filename="water-proof.png"')
+  assert.deepEqual(Buffer.from(await downloadResponse.arrayBuffer()), fileBytes)
+
+  const forgedFile = new FormData()
+  forgedFile.append('file', new Blob(['not a PNG'], { type: 'image/png' }), 'fake.png')
+  const forgedResponse = await fetch(
+    `${baseUrl}/api/households/${householdId}/attachments`,
+    { method: 'POST', body: forgedFile },
+  )
+  assert.equal(forgedResponse.status, 400)
+  assert.deepEqual(await forgedResponse.json(), {
+    error: 'The file contents do not match its supported file type.',
+  })
+
+  const unsupportedFile = new FormData()
+  unsupportedFile.append('file', new Blob(['plain text'], { type: 'text/plain' }), 'notes.txt')
+  const unsupportedResponse = await fetch(
+    `${baseUrl}/api/households/${householdId}/attachments`,
+    { method: 'POST', body: unsupportedFile },
+  )
+  assert.equal(unsupportedResponse.status, 400)
+
+  const oversizedFile = new FormData()
+  oversizedFile.append(
+    'file',
+    new Blob([Buffer.alloc(5 * 1024 * 1024 + 1)], { type: 'image/png' }),
+    'large.png',
+  )
+  const oversizedResponse = await fetch(
+    `${baseUrl}/api/households/${householdId}/attachments`,
+    { method: 'POST', body: oversizedFile },
+  )
+  assert.equal(oversizedResponse.status, 413)
 })
 
 test('authentication registers users, signs in, and protects API routes', async (t) => {
@@ -722,8 +828,12 @@ test('DELETE household removes the record and unlinks it from conservation progr
   const programs = createMemoryModel([
     { _id: 'program-1', participatingHouseholds: [recordId, 'another-household'] },
   ])
+  const attachments = createMemoryModel([
+    { _id: 'attachment-1', household: recordId },
+  ])
   const app = createTestApp({
     HouseholdModel: createMemoryModel([{ _id: recordId, name: 'Greenwood Apartments' }]),
+    HouseholdAttachmentModel: attachments,
     WaterUsageModel: createMemoryModel(),
     ConservationProgramModel: programs,
   })
@@ -741,4 +851,5 @@ test('DELETE household removes the record and unlinks it from conservation progr
   )
   assert.equal(householdResponse.status, 404)
   assert.deepEqual(programs.records[0].participatingHouseholds, ['another-household'])
+  assert.deepEqual(attachments.records, [])
 })

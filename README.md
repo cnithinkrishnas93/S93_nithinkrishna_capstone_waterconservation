@@ -116,11 +116,20 @@ servers after changing environment variables.
 | `GET` | `/api/programs/:id` | Read a conservation program by ID with participating households |
 | `POST` | `/api/programs` | Validate and save a conservation program |
 | `PUT` | `/api/programs/:id` | Validate and update supported conservation program fields |
+| `GET` | `/api/households/:id/attachments` | List proof files for a household |
+| `POST` | `/api/households/:id/attachments` | Upload one proof file for a household |
+| `GET` | `/api/attachments/:id/download` | Download an authenticated household proof file |
 | `GET` | `/api/health` | Check API and MongoDB availability |
 
 PUT requests accept one or more supported fields. Unknown fields are ignored,
 and an update with no supported fields is rejected.
 Households with water usage records cannot be deleted, preserving measurement
 history; a delete request for one returns HTTP 409.
+
+Signed-in users can attach PNG, JPEG, WebP, or PDF proof files to a household
+from the Household highlights section. Uploads are limited to 5 MB, checked
+against their file signatures, and stored in MongoDB with their household
+reference. File listings expose metadata only, and downloads require
+authentication.
 
 Run the backend tests with `cd backend; npm test`.
