@@ -11,6 +11,26 @@ const asyncHandler = (handler) => (req, res, next) => {
 const pick = (body, fields) =>
   Object.fromEntries(fields.filter((field) => body[field] !== undefined).map((field) => [field, body[field]]))
 
+async function validateParticipatingHouseholds(householdIds, HouseholdModel) {
+  if (!Array.isArray(householdIds)) {
+    return { status: 400, error: 'Participating households must be an array.' }
+  }
+
+  if (householdIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+    return { status: 400, error: 'All participating household IDs must be valid.' }
+  }
+
+  const uniqueIds = [...new Set(householdIds.map(String))]
+  const existingHouseholds = await Promise.all(
+    uniqueIds.map((id) => HouseholdModel.exists({ _id: id })),
+  )
+  if (existingHouseholds.some((household) => !household)) {
+    return { status: 404, error: 'One or more participating households were not found.' }
+  }
+
+  return null
+}
+
 const ensureBodyObject = (req, res, next) => {
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
     return res.status(400).json({ error: 'Request body must be a JSON object.' })
@@ -269,6 +289,18 @@ export function createApp({
     '/api/programs',
     ensureBodyObject,
     asyncHandler(async (req, res) => {
+      if (req.body.participatingHouseholds !== undefined) {
+        const relationshipError = await validateParticipatingHouseholds(
+          req.body.participatingHouseholds,
+          HouseholdModel,
+        )
+        if (relationshipError) {
+          return res
+            .status(relationshipError.status)
+            .json({ error: relationshipError.error })
+        }
+      }
+
       const program = new ConservationProgramModel(
         pick(req.body, [
           'name',
@@ -309,6 +341,18 @@ export function createApp({
       const program = await ConservationProgramModel.findById(req.params.id)
       if (!program) {
         return res.status(404).json({ error: 'Program not found.' })
+      }
+
+      if (fields.participatingHouseholds !== undefined) {
+        const relationshipError = await validateParticipatingHouseholds(
+          fields.participatingHouseholds,
+          HouseholdModel,
+        )
+        if (relationshipError) {
+          return res
+            .status(relationshipError.status)
+            .json({ error: relationshipError.error })
+        }
       }
 
       Object.assign(program, fields)
