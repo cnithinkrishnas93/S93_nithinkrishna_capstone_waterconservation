@@ -88,6 +88,19 @@ the frontend or Bruno collection. If Google sign-in is required, set
 ID configured for the frontend, and add the deployed frontend origin to that
 OAuth client's authorized JavaScript origins.
 
+### Deploy the frontend to Netlify
+
+The root `netlify.toml` configures Netlify to build the Vite app from `client/`,
+publish `client/dist`, proxy `/api/*` requests to the Render API, and serve the
+single-page app for other routes. Import this GitHub repository in Netlify and
+use the settings from that file. The API proxy currently points to
+`https://bluedrop-api.onrender.com`; update it in `netlify.toml` if Render gives
+your service a different URL.
+
+After the first successful Netlify deployment, add the public site URL here:
+
+**Deployed frontend:** Pending Netlify deployment.
+
 ### Username and password authentication
 
 Create an account from the sign-in screen with a username (3-32 letters,
