@@ -212,6 +212,96 @@ test('program API persists new conservation programs and filters unknown fields'
   assert.equal('unexpectedField' in createdProgram, false)
 })
 
+test('program creation validates participating household references', async (t) => {
+  const households = createMemoryModel([{ _id: householdId }])
+  const programs = createMemoryModel()
+  const app = createApp({
+    HouseholdModel: households,
+    WaterUsageModel: createMemoryModel(),
+    ConservationProgramModel: programs,
+  })
+  const server = app.listen(0)
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))))
+  const baseUrl = `http://127.0.0.1:${server.address().port}/api/programs`
+  const request = (participatingHouseholds) =>
+    fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Water Wise Neighborhoods',
+        startDate: '2026-11-01',
+        targetReductionPercentage: 15,
+        participatingHouseholds,
+      }),
+    })
+
+  const validResponse = await request([householdId])
+  assert.equal(validResponse.status, 201)
+  assert.deepEqual((await validResponse.json()).participatingHouseholds, [householdId])
+
+  const missingResponse = await request(['507f1f77bcf86cd799439012'])
+  assert.equal(missingResponse.status, 404)
+  assert.deepEqual(await missingResponse.json(), {
+    error: 'One or more participating households were not found.',
+  })
+
+  const invalidResponse = await request(['not-an-object-id'])
+  assert.equal(invalidResponse.status, 400)
+  assert.deepEqual(await invalidResponse.json(), {
+    error: 'All participating household IDs must be valid.',
+  })
+
+  const nonArrayResponse = await request(householdId)
+  assert.equal(nonArrayResponse.status, 400)
+  assert.deepEqual(await nonArrayResponse.json(), {
+    error: 'Participating households must be an array.',
+  })
+
+  assert.equal(programs.records.length, 1)
+})
+
+test('program updates validate participating household references', async (t) => {
+  const programId = '507f1f77bcf86cd799439013'
+  const households = createMemoryModel([{ _id: householdId }])
+  const programs = createMemoryModel([
+    { _id: programId, participatingHouseholds: [] },
+  ])
+  const app = createApp({
+    HouseholdModel: households,
+    WaterUsageModel: createMemoryModel(),
+    ConservationProgramModel: programs,
+  })
+  const server = app.listen(0)
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))))
+  const baseUrl = `http://127.0.0.1:${server.address().port}/api/programs/${programId}`
+  const request = (participatingHouseholds) =>
+    fetch(baseUrl, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ participatingHouseholds }),
+    })
+
+  const validResponse = await request([householdId])
+  assert.equal(validResponse.status, 200)
+  assert.deepEqual((await validResponse.json()).participatingHouseholds, [householdId])
+
+  const missingResponse = await request(['507f1f77bcf86cd799439012'])
+  assert.equal(missingResponse.status, 404)
+  assert.deepEqual(await missingResponse.json(), {
+    error: 'One or more participating households were not found.',
+  })
+
+  const invalidResponse = await request(['not-an-object-id'])
+  assert.equal(invalidResponse.status, 400)
+  assert.deepEqual(await invalidResponse.json(), {
+    error: 'All participating household IDs must be valid.',
+  })
+
+  assert.deepEqual(programs.records[0].participatingHouseholds, [householdId])
+})
+
 test('POST endpoints reject non-object request bodies', async (t) => {
   const app = createApp({
     HouseholdModel: createMemoryModel(),

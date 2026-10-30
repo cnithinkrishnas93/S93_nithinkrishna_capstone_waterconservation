@@ -40,6 +40,12 @@ readings, and conservation programs. The Express API reads and writes these
 records in MongoDB, and the dashboard loads household and usage data from the
 API. It also provides forms to create households and save water readings.
 
+Each water usage reading references one household, and each conservation
+program can reference multiple participating households. API reads populate
+those references with household names and codes. Program create and update
+requests reject malformed or nonexistent household references, and a
+household with usage history cannot be deleted.
+
 ### Run the application
 
 1. Install and start MongoDB locally, or create a MongoDB Atlas database.
